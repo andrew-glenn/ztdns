@@ -57,7 +57,7 @@ type Member struct {
 			Ts int
 		}
 		Authorized           bool
-		Capabilities         []string
+		Capabilities         []int
 		CreationTime         apiTime
 		ID                   string
 		Identity             string
@@ -69,7 +69,7 @@ type Member struct {
 		Objtype              string
 		PhysicalAddr         string
 		Revision             int
-		Tags                 []string
+		Tags             			[][]int
 		VMajor               int
 		VMinor               int
 		VProto               int

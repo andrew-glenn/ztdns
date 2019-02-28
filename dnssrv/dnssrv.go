@@ -17,6 +17,7 @@ import (
 type Records struct {
 	A    []net.IP
 	AAAA []net.IP
+	CNAME []string
 }
 
 // DNSUpdate is the last time the DNSDatabase was updated.
@@ -121,6 +122,13 @@ func parseQuery(m *dns.Msg) {
 			case dns.TypeAAAA:
 				for _, ip := range rec.AAAA {
 					rr, err := dns.NewRR(fmt.Sprintf("%s AAAA %s", q.Name, ip.String()))
+					if err == nil {
+						m.Answer = append(m.Answer, rr)
+					}
+				}
+			case dns.TypeCNAME:
+				for _, cname := range rec.CNAME {
+					rr, err := dns.NewRR(fmt.Sprintf("%s CNAME %s", q.Name, cname))
 					if err == nil {
 						m.Answer = append(m.Answer, rr)
 					}
