@@ -13,7 +13,9 @@ import (
 	"github.com/spf13/viper"
 	"github.com/uxbh/ztdns/dnssrv"
 	"github.com/uxbh/ztdns/ztapi"
-	//"github.com/miekg/dns"
+	"strconv"
+	"strings"
+	// "github.com/tidwall/gjson"
 )
 
 // serverCmd represents the server command
@@ -43,6 +45,7 @@ var serverCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		var offline_nodes bool
 		var tag_records bool
+		var reverse_dns bool
 
 		if viper.GetBool("show_offline_nodes"){
 			offline_nodes = true
@@ -54,8 +57,11 @@ var serverCmd = &cobra.Command{
 			log.Debug("Enabling tag-based CNAME records.")
 		}
 
+		if viper.GetBool("reverse_dns"){
+			reverse_dns = true
+		}
 		// Update the DNSDatabase
-		lastUpdate := updateDNS(offline_nodes, tag_records)
+		lastUpdate := updateDNS(offline_nodes, tag_records, reverse_dns)
 		req := make(chan string)
 		// Start the DNS server
 		go dnssrv.Start(viper.GetString("interface"), viper.GetInt("port"), viper.GetString("suffix"), req)
@@ -71,7 +77,7 @@ var serverCmd = &cobra.Command{
 			// If the database hasn't been updated in the last "refresh" minutes, update it.
 			if time.Since(lastUpdate) > time.Duration(refresh)*time.Minute {
 				log.Infof("DNSDatabase is stale. Refreshing.")
-				lastUpdate = updateDNS(offline_nodes, tag_records)
+				lastUpdate = updateDNS(offline_nodes, tag_records, reverse_dns)
 			}
 		}
 	},
@@ -83,9 +89,20 @@ func init() {
 	viper.BindPFlag("interface", serverCmd.PersistentFlags().Lookup("interface"))
 }
 
-func updateDNS(offline_nodes bool, tag_records bool) time.Time {
+func formatName(name string) string {
+	name = strings.ToLower(name)
+	name = strings.Replace(name, " ", "-", -1)
+	return name
+}
+
+func updateDNS(offline_nodes bool, tag_records bool, reverse_dns bool) time.Time {
 	var suffix_used bool
+	var cname_tag_map map[string]string
+	var cname_record_map map[string][]string
 	suffix_used = true
+	cname_tag_map = make(map[string]string)
+	cname_record_map = make(map[string][]string)
+
 	// Get config info
 	API := viper.GetString("ZT.API")
 	URL := viper.GetString("ZT.URL")
@@ -102,6 +119,17 @@ func updateDNS(offline_nodes bool, tag_records bool) time.Time {
 		if err != nil {
 			log.Fatalf("Unable to update DNS entries: %s", err.Error())
 		}
+		if tag_records{
+			m := ztnetwork.TagsByName
+			for k,v := range m{
+				mtag := k
+				mid := strconv.Itoa(v.ID)
+				for x,y := range v.ENUMS{
+					y := strconv.Itoa(y)
+					cname_tag_map[mid + " " + y] = x + "." + mtag
+				}
+			}
+		}
 
 		// Get list of members in network
 		log.Infof("Getting Members of Network: %s (%s)", ztnetwork.Config.Name, domain)
@@ -115,7 +143,7 @@ func updateDNS(offline_nodes bool, tag_records bool) time.Time {
 			// For all online members
 			if (offline_nodes || n.Online) {
 				// Clear current DNS records
-				record := n.Name + "." + domain + "."
+				record := formatName(n.Name) + "." + domain + "."
 				record_suffix := domain + "."
 				if suffix_used {
 					record = record + suffix + "."
@@ -124,7 +152,6 @@ func updateDNS(offline_nodes bool, tag_records bool) time.Time {
 				dnssrv.DNSDatabase[record] = dnssrv.Records{}
 				ip6 := []net.IP{}
 				ip4 := []net.IP{}
-				cname := []string{}
 				// Get 6Plane address if network has it enabled
 				if ztnetwork.Config.V6AssignMode.Sixplane {
 					ip6 = append(ip6, n.Get6Plane())
@@ -137,7 +164,9 @@ func updateDNS(offline_nodes bool, tag_records bool) time.Time {
 				// Fetch tags.
 				if tag_records {
 					for _, t := range n.Config.Tags {
-						cname = append(cname, fmt.Sprintf("%d", t) + "." + record_suffix)
+						key := fmt.Sprintf("%d %d", t[0], t[1])
+						text := cname_tag_map[key] + "." + record_suffix
+						cname_record_map[text] = append(cname_record_map[text], record)
 					}
 				}
 				// Get the rest of the address assigned to the member
@@ -145,24 +174,35 @@ func updateDNS(offline_nodes bool, tag_records bool) time.Time {
 					ip4 = append(ip4, net.ParseIP(a))
 				}
 				// Add the record to the database
-				if tag_records {
-					log.Infof("Updating %-15s IPv4: %-15s IPv6: %-15s CNAME %s", record, ip4, ip6, cname)
-					dnssrv.DNSDatabase[record] = dnssrv.Records{
-						A:    ip4,
-						AAAA: ip6,
-						CNAME: cname,
+				log.Infof("Updating %-15s IPv4: %-15s IPv6: %s", record, ip4, ip6)
+				dnssrv.DNSDatabase[record] = dnssrv.Records{
+					A:    ip4,
+					AAAA: ip6,
+				}
+				if reverse_dns {
+					for _, addr := range ip4 {
+						log.Infof("Adding PTR record for %s", addr.String())
+						dnssrv.DNSDatabase[addr.String()] = dnssrv.Records{
+							PTR: record,
+						}
 					}
-				} else {
-					log.Infof("Updating %-15s IPv4: %-15s IPv6: %s", record, ip4, ip6)
-					dnssrv.DNSDatabase[record] = dnssrv.Records{
-						A:    ip4,
-						AAAA: ip6,
+					for _, addr := range ip6 {
+						log.Infof("Adding PTR record for %s", addr.String())
+						dnssrv.DNSDatabase[addr.String()] = dnssrv.Records{
+							PTR: record,
+						}
 					}
 				}
 			}
 		}
 	}
-
-	// Return the current update time
+	for record_name, record_value := range cname_record_map{
+		for individ_record := range record_value {
+			log.Infof("Updating %-15s with record %s", record_name, record_value[individ_record])
+		}
+		dnssrv.DNSDatabase[record_name] = dnssrv.Records{
+			CNAME: record_value,
+		}
+	}
 	return time.Now()
 }
