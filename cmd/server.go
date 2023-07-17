@@ -1,5 +1,5 @@
-// Copyright © 2017 uxbh
-// This file is part of github.com/uxbh/ztdns.
+// Copyright © 2017 uxbh; Forked by andrew-glenn
+// This file is part of github.com/andrew-glenn/ztdns.
 
 package cmd
 
@@ -8,11 +8,11 @@ import (
 	"net"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/andrew-glenn/ztdns/dnssrv"
+	"github.com/andrew-glenn/ztdns/ztapi"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/uxbh/ztdns/dnssrv"
-	"github.com/uxbh/ztdns/ztapi"
 	"strconv"
 	"strings"
 	// "github.com/tidwall/gjson"
@@ -47,17 +47,17 @@ var serverCmd = &cobra.Command{
 		var tag_records bool
 		var reverse_dns bool
 
-		if viper.GetBool("show_offline_nodes"){
+		if viper.GetBool("show_offline_nodes") {
 			offline_nodes = true
 			log.Debug("Creating records for offline nodes, too.")
 		}
 
-		if viper.GetBool("enable_tag_cname_records"){
+		if viper.GetBool("enable_tag_cname_records") {
 			tag_records = true
 			log.Debug("Enabling tag-based CNAME records.")
 		}
 
-		if viper.GetBool("reverse_dns"){
+		if viper.GetBool("reverse_dns") {
 			reverse_dns = true
 		}
 		// Update the DNSDatabase
@@ -119,14 +119,14 @@ func updateDNS(offline_nodes bool, tag_records bool, reverse_dns bool) time.Time
 		if err != nil {
 			log.Fatalf("Unable to update DNS entries: %s", err.Error())
 		}
-		if tag_records{
+		if tag_records {
 			m := ztnetwork.TagsByName
-			for k,v := range m{
+			for k, v := range m {
 				mtag := k
 				mid := strconv.Itoa(v.ID)
-				for x,y := range v.ENUMS{
+				for x, y := range v.ENUMS {
 					y := strconv.Itoa(y)
-					cname_tag_map[mid + " " + y] = x + "." + mtag
+					cname_tag_map[mid+" "+y] = x + "." + mtag
 				}
 			}
 		}
@@ -141,7 +141,7 @@ func updateDNS(offline_nodes bool, tag_records bool, reverse_dns bool) time.Time
 
 		for _, n := range *lst {
 			// For all online members
-			if (offline_nodes || n.Online) {
+			if offline_nodes || n.Online {
 				// Clear current DNS records
 				record := formatName(n.Name) + "." + domain + "."
 				record_suffix := domain + "."
@@ -179,7 +179,9 @@ func updateDNS(offline_nodes bool, tag_records bool, reverse_dns bool) time.Time
 					A:    ip4,
 					AAAA: ip6,
 				}
-				dnssrv.DNSDatabase["www."+record] = dnssrv.Records{
+				record = "www." + record
+				log.Infof("Updating %-15s IPv4: %-15s IPv6: %s", record, ip4, ip6)
+				dnssrv.DNSDatabase[record] = dnssrv.Records{
 					A:    ip4,
 					AAAA: ip6,
 				}
@@ -200,7 +202,7 @@ func updateDNS(offline_nodes bool, tag_records bool, reverse_dns bool) time.Time
 			}
 		}
 	}
-	for record_name, record_value := range cname_record_map{
+	for record_name, record_value := range cname_record_map {
 		for individ_record := range record_value {
 			log.Infof("Updating %-15s with record %s", record_name, record_value[individ_record])
 		}

@@ -1,5 +1,5 @@
-// Copyright © 2017 uxbh
-// This file is part of github.com/uxbh/ztdns.
+// Copyright © 2017 uxbh; Forked by andrew-glenn
+// This file is part of github.com/andrew-glenn/ztdns.
 
 package cmd
 

@@ -1,5 +1,5 @@
-// Copyright © 2017 uxbh
-// This file is part of github.com/uxbh/ztdns.
+// Copyright © 2017 uxbh; Forked by andrew-glenn
+// This file is part of github.com/andrew-glenn/ztdns.
 
 package cmd
 
@@ -45,11 +45,12 @@ func init() {
 func initConfig() {
 	if cfgFile != "" { // enable ability to specify config file via flag
 		viper.SetConfigFile(cfgFile)
+	} else {
+		viper.SetConfigName(".ztdns") // name of config file (without extension)
+		viper.AddConfigPath(".")      // adding current directory as first search path
+		viper.AddConfigPath("$HOME")  // adding home directory as second search path
 	}
-
-	viper.SetConfigName(".ztdns") // name of config file (without extension)
-	viper.AddConfigPath(".")      // adding current directory as first search path
-	viper.AddConfigPath("$HOME")  // adding home directory as second search path
+	// adding home directory as second search path
 
 	viper.SetEnvPrefix("ztdns")
 	viper.AutomaticEnv() // read in environment variables that match
