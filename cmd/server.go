@@ -143,6 +143,9 @@ func updateDNS(offline_nodes bool, tag_records bool, reverse_dns bool) time.Time
 			// For all online members
 			if offline_nodes || n.Online {
 				// Clear current DNS records
+				if n.Name == "" {
+					continue
+				}
 				record := formatName(n.Name) + "." + domain + "."
 				record_suffix := domain + "."
 				if suffix_used {
