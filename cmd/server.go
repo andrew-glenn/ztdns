@@ -179,6 +179,10 @@ func updateDNS(offline_nodes bool, tag_records bool, reverse_dns bool) time.Time
 					A:    ip4,
 					AAAA: ip6,
 				}
+				dnssrv.DNSDatabase["www."+record] = dnssrv.Records{
+					A:    ip4,
+					AAAA: ip6,
+				}
 				if reverse_dns {
 					for _, addr := range ip4 {
 						log.Infof("Adding PTR record for %s", addr.String())
